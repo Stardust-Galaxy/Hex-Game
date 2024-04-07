@@ -1,5 +1,7 @@
 #define _CRT_SECURE_NO_WARNINGS
 #define SIZE 11
+#define AI 1
+#define RIVAL -1
 #include <iostream>
 #include <random>
 #include <vector>
@@ -78,7 +80,7 @@ public:
 		}
 		return best;
 	}
-
+	/*反向传播*/
 	void backpropagation(MCSTNode* node, int result) {
 		while(node != nullptr) {
 			node->N += 1;
@@ -86,7 +88,7 @@ public:
 			node = node->parent;
 		}
 	}
-
+	/*模拟*/
 	int simulation(MCSTNode* node) {
 		node->clonedBoard = new int*[11];
 		for(int i = 0;i < 11;i += 1) {
@@ -176,7 +178,6 @@ public:
 	/* board=1为红方/先手的棋，board=-1为蓝方/后手的棋 */
 	int steps = 0;	//双方已下棋回合数
 	int board[SIZE + 4][SIZE + 4];	//棋盘状态，默认均为0（未落子）
-	bool flag = true;	//flag标志AI时先手还是后手，true为先手，false为后手
 public:
 	void BuildBoard() {
 		set.BuildFather(SIZE * SIZE);
@@ -184,40 +185,20 @@ public:
 		int x, y;
 		for (int i = 0; i < steps - 1; i++) {
 			scanf_s("%d%d", &x, &y);   //对方落子
-			if (i == 0 && x == -1) {
-				flag = true;	//输入的第一棋是（-1，-1），说明AI己方是先手
+			if (x == -1) {
+				//输入的第一棋是（-1，-1），说明AI己方是先手，不用管
 			}
-			else if (i == 0 && x != -1) {
-				flag = false;	//后手
-				board[x][y] = 1;
-				//UnionStones(x, y);
-			}
-			else if (flag) {		//在不是第一回合的情况下，AI己方是先手
-				board[x][y] = -1;	
-				UnionStones(x, y);
-			}
-			else {  //己方是后手
-				board[x][y] = 1;
+			else if (x != -1) {
+				board[x][y] = RIVAL;
 				UnionStones(x, y);
 			}
 			scanf_s("%d%d", &x, &y);  //这里输入的绝对不可能是（-1，-1）  //己方落子
-			if (x != -1) {	//其实感觉没有必要加这个判断
-				if (flag)
-					board[x][y] = 1;
-				else 
-					board[x][y] = -1;
-				UnionStones(x, y);
-			}
-		}
-
-		scanf_s("%d%d", &x, &y);
-		if (x != -1) {
-			if (flag)
-				board[x][y] = -1;
-			else
-				board[x][y] = 1;
+			board[x][y] = AI;
 			UnionStones(x, y);
 		}
+		scanf_s("%d%d", &x, &y);		//对方落子
+		board[x][y] = RIVAL;
+		UnionStones(x, y);
 	}
 	
 	
