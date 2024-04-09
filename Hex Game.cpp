@@ -129,13 +129,7 @@ struct MCSTNode {
 	int player = RIVAL;	//当前节点是哪个玩家下的，初始化为RIVAL（根节点是对手下的最后一颗棋）
 	int** clonedBoard;	//克隆的棋盘
 	bool isLeaf = true;		//是否是叶节点
-
-	bool is_leaf() {
-		for (int i = 0; i < 121; i += 1) {
-			if (next[i] != nullptr)
-				isLeaf = false;
-		}
-	}
+	vector<pair<int, int>> emptyGrids;
 
 	~MCSTNode() {
 		for (int i = 0; i < 121; i += 1) {
@@ -153,6 +147,7 @@ public:
 	MCTS(int** board, DisjointSet* set) {
 		root = new MCSTNode();
 		root->set = set;
+		root->isLeaf = false;
 		root->clonedBoard = new int* [SIZE];
 		for (int i = 0; i < SIZE; i += 1) {
 			root->clonedBoard[i] = new int[SIZE];
@@ -162,7 +157,22 @@ public:
 				root->clonedBoard[i][j] = board[i][j];
 			}
 		}
-		
+		for (int i = 0; i < 11; i += 1) {
+			for (int j = 0; j < 11; j += 1) {
+				if (root->clonedBoard[i][j] == 0) {
+					root->emptyGrids.push_back(make_pair(i, j));
+				}
+			}
+		}
+		for (auto& grid : root->emptyGrids) {
+			MCSTNode* child = new MCSTNode();
+			child->parent = root;
+			child->move = toIndex(grid.first, grid.second);
+			child->player = -root->player;
+			child->set = new DisjointSet(*root->set);
+			child->set->UnionStones(grid.first, grid.second, root->clonedBoard);
+			root->next[toIndex(grid.first, grid.second)] = child;
+		}
 	}
 
 	/*选取进行模拟对局的节点*/
@@ -178,7 +188,7 @@ public:
 		MCSTNode* best = nullptr;
 		for (int i = 0; i < 121; i += 1) {
 			if (node->next[i] != nullptr) {	//应当必不为空，在进行寻找bestchild时，节点应当121个子
-				double UCB = node->next[i]->win / (node->next[i]->N + epilson) + sqrt(2 * log(root->N + epilson) / (node->next[i]->N + epilson)) + (rand() % 100) / 100.0 * epilson; // Add a random number between 0 and 1
+				double UCB = node->next[i]->win / (node->next[i]->N + epilson) + sqrt(2 * log(root->N + epilson + 1) / (node->next[i]->N + epilson)) + (rand() % 100) / 100.0 * epilson; // Add a random number between 0 and 1
 				if (UCB > max) {
 					max = UCB;
 					best = node->next[i];
@@ -192,47 +202,44 @@ public:
 	int simulation(MCSTNode* node) {
 		/*设置node节点状态的棋盘 和 模拟用board*/
 		int** simulation_board;
-		node->clonedBoard = new int* [SIZE];
 		simulation_board = new int* [SIZE];
 		for (int i = 0; i < SIZE; i++) {
-			node->clonedBoard[i] = new int[SIZE];
 			simulation_board[i] = new int[SIZE];
 		}
 		for (int i = 0; i < SIZE; i++) {
 			for (int j = 0; j < SIZE; j++) {
-				node->clonedBoard[i][j] = node->parent->clonedBoard[i][j];
-				simulation_board[i][j] = node->clonedBoard[i][j];
+				simulation_board[i][j] = node->parent->clonedBoard[i][j];
 			}
 		}
 		int x, y;
-		toPos(node->move, x, y);
-		node->clonedBoard[x][y] = -node->parent->player;		//= node->player
-		simulation_board[x][y] = node->clonedBoard[x][y];
+		toPos(node->move, x, y);		
+		simulation_board[x][y] = node->parent->clonedBoard[x][y];
+		simulation_board[x][y] = -node->parent->player;
 		/*设置node节点状态的并查集 和 模拟用set*/
 		DisjointSet* simulation_set;
-		node->set = new DisjointSet(*node->parent->set);
-		node->set->UnionStones(x, y, node->clonedBoard);
 		simulation_set = new DisjointSet(*node->set);
 
 		/*纯随机对局，这里就是之后添加策略所要修改的地方*/
-		vector<pair<int, int>> emptyGrids;
+
 		for (int i = 0; i < 11; i += 1) {
 			for (int j = 0; j < 11; j += 1) {
 				if (simulation_board[i][j] == 0) {
-					emptyGrids.push_back(make_pair(i, j));
+					node->emptyGrids.push_back(make_pair(i, j));
 				}
 			}
 		}
-		int who = -node->player;	//在上面构建该节点board过程中，该节点对应的那颗棋已经下完，也就是说下一颗棋（正式随即对局的第一颗棋）是-node->player下
-		while (emptyGrids.size() > 0) {
-			int index = rand() % emptyGrids.size();
-			int x = emptyGrids[index].first;
-			int y = emptyGrids[index].second;
-			emptyGrids.erase(emptyGrids.begin() + index);
+		//在上面构建该节点board过程中，该节点对应的那颗棋已经下完，也就是说下一颗棋（正式随即对局的第一颗棋）是-node->player下
+		int who = -node->player;
+		while (node->emptyGrids.size() > 0) {
+			int index = rand() % node->emptyGrids.size();
+			int x = node->emptyGrids[index].first;
+			int y = node->emptyGrids[index].second;
+			node->emptyGrids.erase(node->emptyGrids.begin() + index);
 			simulation_board[x][y] = who;
 			simulation_set->UnionStones(x, y, simulation_board);
 			who = -who;
 		}
+		delete[] simulation_board;
 		//判断AI输赢
 		bool win = checkWinner(simulation_set);
 		//返回结果
@@ -242,6 +249,7 @@ public:
 		else {
 			return 0;
 		}
+		delete simulation_set;
 	}
 
 	/*反向传播*/
@@ -254,26 +262,52 @@ public:
 	}
 
 	/*对节点（以这一节点为起始模拟的对局一定已完成）扩展子节点*/
-	void expand(MCSTNode* node) {
-		node->isLeaf = false;
-		for (int i = 0; i < 121; i++) {
-			if (node->next[i] == nullptr) {		//应该是不需要
-				node->next[i] = new MCSTNode();
-				node->next[i]->parent = node;
-				node->next[i]->move = i;
-				node->next[i]->player = -(node->player);
+	MCSTNode* expand(MCSTNode* node) {
+		node->clonedBoard = new int* [SIZE];
+		for (int i = 0; i < SIZE; i++) {
+			node->clonedBoard[i] = new int[SIZE];
+		}
+		for (int i = 0; i < SIZE; i++) {
+			for (int j = 0; j < SIZE; j++) {
+				node->clonedBoard[i][j] = node->parent->clonedBoard[i][j];
 			}
 		}
+		int x, y;
+		toPos(node->move, x, y);
+		node->clonedBoard[x][y] = -node->parent->player;
+		node->player = -node->parent->player;
+		node->isLeaf = false;
+		for (int i = 0; i < 11; i += 1) {
+			for (int j = 0; j < 11; j += 1) {
+				if (node->clonedBoard[i][j] == 0) {
+					node->emptyGrids.push_back(make_pair(i, j));
+				}
+			}
+		}
+		for (auto& grid : node->emptyGrids) {
+			MCSTNode* child = new MCSTNode();
+			child->parent = node;
+			child->move = toIndex(grid.first, grid.second);
+			child->player = -node->player;
+			child->set = new DisjointSet(*node->set);
+			child->set->UnionStones(grid.first, grid.second, node->clonedBoard);
+			node->next[toIndex(grid.first, grid.second)] = child;
+		}
+		return node->next[node->emptyGrids[0].first * 11 + node->emptyGrids[0].second];
 	}
 
 	/*蒙特卡洛自博弈开始，最终形成一棵可计算UCT的博弈树*/
-	void run(int iterations) {
+	void run() {
 		srand(time(0));
-		while (iterations--) {
+		int threshold = 0.95 * (double)CLOCKS_PER_SEC;
+		int startTime, currentTime;
+		startTime = currentTime = clock();
+		while (currentTime - startTime < threshold) {
 			MCSTNode* node = select(root);
+			node = expand(node);
 			int win = simulation(node);
 			backpropagation(node, win);
-			expand(node);
+			currentTime = clock();
 		}
 	}
 
@@ -283,7 +317,7 @@ public:
 		int best = -1;
 		for (int i = 0; i < 121; i += 1) {
 			if (root->next[i] != nullptr) {
-				double UCB = root->next[i]->win / (root->next[i]->N + epilson) + sqrt(2 * log(root->N + epilson) / (root->next[i]->N + epilson)) + (rand() % 100) / 100.0 * epilson; // Add a random number between 0 and 1
+				double UCB = root->next[i]->win / (root->next[i]->N + epilson); // Add a random number between 0 and 1
 				if (UCB > max) {
 					max = UCB;
 					best = i;
@@ -303,7 +337,7 @@ public:
 
 	/* board=1为红方/先手的棋，board=-1为蓝方/后手的棋 */
 	int steps = 0;	//双方已下棋回合数
-	int **board;	//棋盘状态，默认均为0（未落子）
+	int** board;	//棋盘状态，默认均为0（未落子）
 public:
 	void BuildBoard() {
 		/*初始化*/
@@ -341,7 +375,7 @@ public:
 
 	void play() {
 		BuildBoard();
-		mcts->run(1000);
+		mcts->run();
 		int best = mcts->getBestMove();
 		int x, y;
 		toPos(best, x, y);
