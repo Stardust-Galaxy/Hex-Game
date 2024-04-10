@@ -1,25 +1,28 @@
 #define _CRT_SECURE_NO_WARNINGS
 #define SIZE 11
-#define AI 1
-#define RIVAL -1
+#define RED 1
+#define BLUE -1
 #include <iostream>
 #include <random>
 #include <vector>
 #include <algorithm>
 #include <ctime>
+#include <queue>
+#include <unordered_set>
 using namespace std;
 
 double epilson = 1e-2;
 bool isFirst = false;	//AI是先手还是后手
+int RIVAL, AI;
 
 /*index值转有序对*/
 void toPos(int a, int& x, int& y) {
-	x = a / 11;
-	y = a % 11;
+	x = a / 11 + 1;
+	y = a % 11 + 1;
 }
 /*有序对转变为int，一一对应的*/
 int toIndex(int x, int y) {
-	return x * 11 + y;
+	return (x - 1) * 11 + y - 1;
 }
 
 
@@ -52,9 +55,9 @@ public:
 		}
 	}
 
-	/*检查当前坐标是否越界*/  //应该还要写个检查坐标是否合法的函数
+	/*检查当前坐标是否越界*/  
 	bool isValid(int x, int y) {
-		if (x < 0 || x > 10 || y < 0 || y > 10)
+		if (x < 1 || x > 11 || y < 1 || y > 11)
 			return false;
 		return true;
 	}
@@ -84,6 +87,31 @@ public:
 	}
 };
 
+class Cluster {
+public:
+	int color;
+	unordered_set<pair<int, int>> adjacentEmptyCells;
+	unordered_set<pair<int, int>> colorCells;
+	Cluster(int color) {
+		this->color = color;
+	}
+
+};
+
+void getClusters(int** board, int color) {
+	vector<Cluster> clusters;
+	int visited[SIZE + 2][SIZE + 2] = { 0 };
+	for (int i = 0; i < SIZE + 2; i++) {
+		for (int j = 0; j < SIZE + 2; j++) {
+			if(board[i][j] == color && visited[i][j] == 0){
+				Cluster cluster = Cluster(color);
+				//bfs
+				queue<pair<int, int>> q;
+				q.push(make_pair(i, j));
+		}
+	}
+
+}
 
 /*在棋盘下满之后，判断谁赢，return true说明AI赢，false说明RIVAL赢
 	用于随机模拟对局中判断AI输赢*/
@@ -126,7 +154,7 @@ struct MCSTNode {
 	int win = 0;	//赢了多少局
 	int move;		//当前节点是父节点得到哪一个子节点
 	DisjointSet* set;		//当前节点的并查集
-	int player = RIVAL;	//当前节点是哪个玩家下的，初始化为RIVAL（根节点是对手下的最后一颗棋）
+	int player = RED;	//当前节点是哪个玩家下的，初始化为RIVAL（根节点是对手下的最后一颗棋）
 	int** clonedBoard;	//克隆的棋盘
 	bool isLeaf = true;		//是否是叶节点
 	vector<pair<int, int>> emptyGrids;
@@ -136,6 +164,7 @@ struct MCSTNode {
 			delete next[i];
 		}
 	}
+
 };
 /*蒙特卡洛树搜索算法*/
 class MCTS {
@@ -148,17 +177,18 @@ public:
 		root = new MCSTNode();
 		root->set = set;
 		root->isLeaf = false;
-		root->clonedBoard = new int* [SIZE];
-		for (int i = 0; i < SIZE; i += 1) {
-			root->clonedBoard[i] = new int[SIZE];
+		root->clonedBoard = new int* [SIZE + 2];
+		root->player = isFirst ? RED : BLUE;
+		for (int i = 0; i < SIZE + 2; i += 1) {
+			root->clonedBoard[i] = new int[SIZE + 2];
 		}
-		for (int i = 0; i < SIZE; i += 1) {
-			for (int j = 0; j < SIZE; j += 1) {
+		for (int i = 0; i < SIZE + 2; i += 1) {
+			for (int j = 0; j < SIZE + 2; j += 1) {
 				root->clonedBoard[i][j] = board[i][j];
 			}
 		}
-		for (int i = 0; i < 11; i += 1) {
-			for (int j = 0; j < 11; j += 1) {
+		for (int i = 1; i <= SIZE; i += 1) {
+			for (int j = 1; j <= SIZE; j += 1) {
 				if (root->clonedBoard[i][j] == 0) {
 					root->emptyGrids.push_back(make_pair(i, j));
 				}
@@ -202,17 +232,17 @@ public:
 	int simulation(MCSTNode* node) {
 		/*设置node节点状态的棋盘 和 模拟用board*/
 		int** simulation_board;
-		simulation_board = new int* [SIZE];
-		for (int i = 0; i < SIZE; i++) {
-			simulation_board[i] = new int[SIZE];
+		simulation_board = new int* [SIZE + 2];
+		for (int i = 0; i < SIZE + 2; i++) {
+			simulation_board[i] = new int[SIZE + 2];
 		}
-		for (int i = 0; i < SIZE; i++) {
-			for (int j = 0; j < SIZE; j++) {
+		for (int i = 0; i < SIZE + 2; i++) {
+			for (int j = 0; j < SIZE + 2; j++) {
 				simulation_board[i][j] = node->parent->clonedBoard[i][j];
 			}
 		}
 		int x, y;
-		toPos(node->move, x, y);		
+		toPos(node->move, x, y);
 		simulation_board[x][y] = node->parent->clonedBoard[x][y];
 		simulation_board[x][y] = -node->parent->player;
 		/*设置node节点状态的并查集 和 模拟用set*/
@@ -221,8 +251,8 @@ public:
 
 		/*纯随机对局，这里就是之后添加策略所要修改的地方*/
 
-		for (int i = 0; i < 11; i += 1) {
-			for (int j = 0; j < 11; j += 1) {
+		for (int i = 1; i <= SIZE; i += 1) {
+			for (int j = 1; j <= SIZE; j += 1) {
 				if (simulation_board[i][j] == 0) {
 					node->emptyGrids.push_back(make_pair(i, j));
 				}
@@ -263,12 +293,12 @@ public:
 
 	/*对节点（以这一节点为起始模拟的对局一定已完成）扩展子节点*/
 	MCSTNode* expand(MCSTNode* node) {
-		node->clonedBoard = new int* [SIZE];
-		for (int i = 0; i < SIZE; i++) {
-			node->clonedBoard[i] = new int[SIZE];
+		node->clonedBoard = new int* [SIZE + 2];
+		for (int i = 0; i < SIZE + 2; i++) {
+			node->clonedBoard[i] = new int[SIZE + 2];
 		}
-		for (int i = 0; i < SIZE; i++) {
-			for (int j = 0; j < SIZE; j++) {
+		for (int i = 0; i < SIZE + 2; i++) {
+			for (int j = 0; j < SIZE + 2; j++) {
 				node->clonedBoard[i][j] = node->parent->clonedBoard[i][j];
 			}
 		}
@@ -277,8 +307,8 @@ public:
 		node->clonedBoard[x][y] = -node->parent->player;
 		node->player = -node->parent->player;
 		node->isLeaf = false;
-		for (int i = 0; i < 11; i += 1) {
-			for (int j = 0; j < 11; j += 1) {
+		for (int i = 1; i <= SIZE; i += 1) {
+			for (int j = 1; j <= SIZE; j += 1) {
 				if (node->clonedBoard[i][j] == 0) {
 					node->emptyGrids.push_back(make_pair(i, j));
 				}
@@ -293,7 +323,7 @@ public:
 			child->set->UnionStones(grid.first, grid.second, node->clonedBoard);
 			node->next[toIndex(grid.first, grid.second)] = child;
 		}
-		return node->next[node->emptyGrids[0].first * 11 + node->emptyGrids[0].second];
+		return node->next[(node->emptyGrids[0].first - 1) * 11 + node->emptyGrids[0].second - 1];
 	}
 
 	/*蒙特卡洛自博弈开始，最终形成一棵可计算UCT的博弈树*/
@@ -339,17 +369,23 @@ public:
 	int steps = 0;	//双方已下棋回合数
 	int** board;	//棋盘状态，默认均为0（未落子）
 public:
-	void BuildBoard() {
+	bool BuildBoard() {
 		/*初始化*/
 		set = new DisjointSet();
 		set->BuildFather(SIZE * SIZE);
-		board = new int* [SIZE];
-		for (int i = 0; i < SIZE; i++) {
-			board[i] = new int[SIZE];
+		board = new int* [SIZE + 2];
+		for (int i = 0; i < SIZE + 2; i++) {
+			board[i] = new int[SIZE + 2];
 		}
-		for (int i = 0; i < SIZE; i++)
-			for (int j = 0; j < SIZE; j++)
+		for (int i = 1; i <= SIZE; i++)
+			for (int j = 1; j <= SIZE; j++)
 				board[i][j] = 0;
+		for (int i = 0; i <= SIZE; i += 1) {
+			board[0][i] = RED;
+			board[SIZE + 1][i + 1] = RED;
+			board[i + 1][0] = BLUE;
+			board[i][SIZE + 1] = BLUE;
+		}
 		/*读入数据*/
 		scanf("%d", &steps);
 		int x, y;
@@ -358,28 +394,45 @@ public:
 			if (i == 0 && x == -1) {
 				//输入的第一棋是（-1，-1），说明AI己方是先手，不用管
 				isFirst = true;
+				AI = RED;
+				RIVAL = BLUE;
+			}
+			else if (i == 0 && x != -1) {
+				isFirst = false;
+				RIVAL = RED;
+				AI = BLUE;
 			}
 			else if (x != -1) {
-				board[x][y] = RIVAL;
-				set->UnionStones(x, y, board);
+				board[x + 1][y + 1] = RIVAL;
+				set->UnionStones(x + 1, y + 1, board);
 			}
-			scanf("%d%d", &x, &y);  //这里输入的绝对不可能是（-1，-1）  //己方落子
-			board[x][y] = AI;
-			set->UnionStones(x, y, board);
+			scanf("%d %d", &x, &y);  //这里输入的绝对不可能是（-1，-1）  //己方落子
+			board[x + 1][y + 1] = AI;
+			set->UnionStones(x + 1, y + 1, board);
 		}
-		scanf("%d%d", &x, &y);		//对方落子
-		board[x][y] = RIVAL;
-		set->UnionStones(x, y, board);
-		mcts = new MCTS(board, set);
+		scanf("%d %d", &x, &y);		//对方落子
+		if (x == -1) {
+			printf("1 2");
+			return false;
+		}
+		else {
+			board[x + 1][y + 1] = RIVAL;
+			set->UnionStones(x + 1, y + 1, board);
+			mcts = new MCTS(board, set);
+			return true;
+		}
 	}
 
 	void play() {
-		BuildBoard();
+		bool flag = BuildBoard();
+		if (flag == false) {
+			return;
+		}
 		mcts->run();
 		int best = mcts->getBestMove();
 		int x, y;
 		toPos(best, x, y);
-		printf("%d %d\n", x, y);
+		printf("%d %d", x, y);
 	}
 };
 
