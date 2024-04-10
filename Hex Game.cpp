@@ -108,9 +108,9 @@ void getClusters(int** board, int color) {
 				//bfs
 				queue<pair<int, int>> q;
 				q.push(make_pair(i, j));
+			}
 		}
 	}
-
 }
 
 /*在棋盘下满之后，判断谁赢，return true说明AI赢，false说明RIVAL赢
