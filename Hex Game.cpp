@@ -1,6 +1,7 @@
 #define _CRT_SECURE_NO_WARNINGS
 #define SIZE 11
 #define RED 1
+#define EMPTY 0
 #define BLUE -1
 #include <iostream>
 #include <random>
@@ -25,6 +26,12 @@ int toIndex(int x, int y) {
 	return (x - 1) * 11 + y - 1;
 }
 
+/*检查当前坐标是否越界*/
+bool isValid(int x, int y) {
+	if (x < 1 || x > 11 || y < 1 || y > 11)
+		return false;
+	return true;
+}
 
 
 class DisjointSet {
@@ -53,13 +60,6 @@ public:
 			father[b] += father[a];
 			father[a] = b;
 		}
-	}
-
-	/*检查当前坐标是否越界*/  
-	bool isValid(int x, int y) {
-		if (x < 1 || x > 11 || y < 1 || y > 11)
-			return false;
-		return true;
 	}
 
 	/*合并相连的棋子（并查集的合并）*/
@@ -98,19 +98,41 @@ public:
 
 };
 
-void getClusters(int** board, int color) {
+vector<Cluster> getClusters(int** board, int color) {
 	vector<Cluster> clusters;
 	int visited[SIZE + 2][SIZE + 2] = { 0 };
 	for (int i = 0; i < SIZE + 2; i++) {
 		for (int j = 0; j < SIZE + 2; j++) {
-			if(board[i][j] == color && visited[i][j] == 0){
+			if (board[i][j] == color && visited[i][j] == 0) {
 				Cluster cluster = Cluster(color);
 				//bfs
 				queue<pair<int, int>> q;
 				q.push(make_pair(i, j));
+				visited[i][j] = 1;
+				while (!q.empty()) {
+					int x = q.front().first;
+					int y = q.front().second;
+					q.pop();
+					cluster.colorCells.insert(make_pair(x, y));
+					int dx[6] = { 0, 1, 1, -1, 0, -1 };
+					int dy[6] = { 1, 1, 0, 0, -1, -1 };
+					for (int k = 0; k < 6; k++) {
+						int xx = x + dx[k];
+						int yy = y + dy[k];
+						if (isValid(xx, yy) && board[xx][yy] == color && visited[xx][yy] == 0) {
+							q.push(make_pair(xx, yy));
+							visited[xx][yy] = 1;
+						}
+						else if (isValid(xx, yy) && board[xx][yy] == EMPTY && visited[xx][yy] == 0) {
+							cluster.adjacentEmptyCells.insert(make_pair(xx, yy));
+						}
+					}
+				}
+				clusters.push_back(cluster);
 			}
 		}
 	}
+	return clusters;
 }
 
 /*在棋盘下满之后，判断谁赢，return true说明AI赢，false说明RIVAL赢
@@ -406,11 +428,11 @@ public:
 				board[x + 1][y + 1] = RIVAL;
 				set->UnionStones(x + 1, y + 1, board);
 			}
-			scanf("%d %d", &x, &y);  //这里输入的绝对不可能是（-1，-1）  //己方落子
+			scanf("%d%d", &x, &y);  //这里输入的绝对不可能是（-1，-1）  //己方落子
 			board[x + 1][y + 1] = AI;
 			set->UnionStones(x + 1, y + 1, board);
 		}
-		scanf("%d %d", &x, &y);		//对方落子
+		scanf("%d%d", &x, &y);		//对方落子
 		if (x == -1) {
 			printf("1 2");
 			return false;
