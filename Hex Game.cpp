@@ -10,6 +10,7 @@
 #include <ctime>
 #include <queue>
 #include <unordered_set>
+
 using namespace std;
 
 double epilson = 1e-2;
@@ -95,45 +96,16 @@ public:
 	Cluster(int color) {
 		this->color = color;
 	}
-
+	Cluster(const Cluster& cluster) {
+		this->color = cluster.color;
+		this->adjacentEmptyCells = cluster.adjacentEmptyCells;
+		this->colorCells = cluster.colorCells;
+	}
 };
 
-vector<Cluster> getClusters(int** board, int color) {
-	vector<Cluster> clusters;
-	int visited[SIZE + 2][SIZE + 2] = { 0 };
-	for (int i = 0; i < SIZE + 2; i++) {
-		for (int j = 0; j < SIZE + 2; j++) {
-			if (board[i][j] == color && visited[i][j] == 0) {
-				Cluster cluster = Cluster(color);
-				//bfs
-				queue<pair<int, int>> q;
-				q.push(make_pair(i, j));
-				visited[i][j] = 1;
-				while (!q.empty()) {
-					int x = q.front().first;
-					int y = q.front().second;
-					q.pop();
-					cluster.colorCells.insert(make_pair(x, y));
-					int dx[6] = { 0, 1, 1, -1, 0, -1 };
-					int dy[6] = { 1, 1, 0, 0, -1, -1 };
-					for (int k = 0; k < 6; k++) {
-						int xx = x + dx[k];
-						int yy = y + dy[k];
-						if (isValid(xx, yy) && board[xx][yy] == color && visited[xx][yy] == 0) {
-							q.push(make_pair(xx, yy));
-							visited[xx][yy] = 1;
-						}
-						else if (isValid(xx, yy) && board[xx][yy] == EMPTY && visited[xx][yy] == 0) {
-							cluster.adjacentEmptyCells.insert(make_pair(xx, yy));
-						}
-					}
-				}
-				clusters.push_back(cluster);
-			}
-		}
-	}
-	return clusters;
-}
+
+
+
 
 /*在棋盘下满之后，判断谁赢，return true说明AI赢，false说明RIVAL赢
 	用于随机模拟对局中判断AI输赢*/
@@ -167,6 +139,8 @@ bool checkWinner(DisjointSet* set) {
 		}
 		return false;
 	}
+
+
 }
 /*蒙特卡洛搜索树中的每个节点*/
 struct MCSTNode {
@@ -179,11 +153,205 @@ struct MCSTNode {
 	int player = RED;	//当前节点是哪个玩家下的，初始化为RIVAL（根节点是对手下的最后一颗棋）
 	int** clonedBoard;	//克隆的棋盘
 	bool isLeaf = true;		//是否是叶节点
+	int evalValue = 0;
 	vector<pair<int, int>> emptyGrids;
+	vector<Cluster> clusters;
+	int** blueDistance;
+	int** redDistance;
+	int bluePotential;
+	int redPotential;
+	int blueMovability;
+	int redMovability;
 
 	~MCSTNode() {
 		for (int i = 0; i < 121; i += 1) {
 			delete next[i];
+		}
+	}
+
+	void getClusters(int** board, int color) {
+		clusters.clear();
+		int visited[SIZE + 2][SIZE + 2] = { 0 };
+		for (int i = 0; i < SIZE + 2; i++) {
+			for (int j = 0; j < SIZE + 2; j++) {
+				if (board[i][j] == color && visited[i][j] == 0) {
+					Cluster cluster = Cluster(color);
+					//bfs
+					queue<pair<int, int>> q;
+					q.push(make_pair(i, j));
+					visited[i][j] = 1;
+					while (!q.empty()) {
+						int x = q.front().first;
+						int y = q.front().second;
+						q.pop();
+						cluster.colorCells.emplace(x, y);
+						int dx[6] = { 0, 1, 1, -1, 0, -1 };
+						int dy[6] = { 1, 1, 0, 0, -1, -1 };
+						for (int k = 0; k < 6; k++) {
+							int xx = x + dx[k];
+							int yy = y + dy[k];
+							if (isValid(xx, yy) && board[xx][yy] == color && visited[xx][yy] == 0) {
+								q.push(make_pair(xx, yy));
+								visited[xx][yy] = 1;
+							}
+							else if (isValid(xx, yy) && board[xx][yy] == EMPTY && visited[xx][yy] == 0) {
+								cluster.adjacentEmptyCells.emplace(xx, yy);
+							}
+						}
+					}
+					clusters.push_back(cluster);
+				}
+			}
+		}
+	}
+
+	void CLA(int color) {
+		queue<pair<int, int>> q1;
+		queue<pair<int, int>> q2;
+		int lineNum = 1;
+		int distanceToUpOrRight[SIZE + 2][SIZE + 2] = { 0 };
+		int distanceToDownOrLeft[SIZE + 2][SIZE + 2] = { 0 };
+		int** distance = new int* [SIZE + 2];
+		int visited[SIZE + 2][SIZE + 2] = { 0 };
+		for (int i = 0; i < SIZE + 2; i += 1) {
+			distance[i] = new int[SIZE + 2];
+		}
+		for (auto& iterator : clusters[0].adjacentEmptyCells) {
+			distanceToUpOrRight[iterator.first][iterator.second] = 1;
+			q1.push(iterator);
+		}
+		while (!q1.empty()) {
+			lineNum += 1;
+			while (q1.empty() == false) {
+				int x = q1.front().first;
+				int y = q1.front().second;
+				q1.pop();
+				int dx[6] = { 0, 1, 1, -1, 0, -1 };
+				int dy[6] = { 1, 1, 0, 0, -1, -1 };
+				for (int i = 0; i < 6; i += 1) {
+					int xx = x + dx[i];
+					int yy = y + dy[i];
+					if (isValid(xx, yy) && clonedBoard[xx][yy] == EMPTY) {
+						if (visited[xx][yy] == 0) {
+							visited[xx][yy] = 1;
+							distanceToUpOrRight[xx][yy] = lineNum;
+						}
+						else if (visited[xx][yy] == 1) {
+							visited[xx][yy] = 2;
+							distanceToUpOrRight[xx][yy] = lineNum > distanceToUpOrRight[xx][yy] ? lineNum : distanceToUpOrRight[xx][yy];
+							q2.push(make_pair(xx, yy));
+						}
+					}
+					else if (isValid(xx, yy) && clonedBoard[xx][yy] == color) {
+						for (auto& iterator : clusters) {
+							if (iterator.colorCells.find({ xx,yy }) != iterator.colorCells.end()) {
+								for (auto& iterator2 : iterator.adjacentEmptyCells) {
+									if (clonedBoard[iterator2.first][iterator2.second] == EMPTY) {
+										if (visited[xx][yy] == 0) {
+											visited[xx][yy] = 1;
+											distanceToUpOrRight[xx][yy] = lineNum;
+										}
+										else if (visited[xx][yy] == 1) {
+											visited[xx][yy] = 2;
+											distanceToUpOrRight[xx][yy] = lineNum > distanceToUpOrRight[xx][yy] ? lineNum : distanceToUpOrRight[xx][yy];
+											q2.push(make_pair(xx, yy));
+										}
+									}
+								}
+								break;
+							}
+						}
+					}
+				}
+			}
+			swap(q1, q2);
+		}
+		pair<int, int> grid;
+		if (color == RED) {
+			grid = make_pair(SIZE + 1, 1);
+		}
+		else {
+			grid = make_pair(0, 1);
+		}
+		for (int i = 0; i < clusters.size(); i += 1) {
+			if (clusters[i].adjacentEmptyCells.find(grid) != clusters[i].adjacentEmptyCells.end()) {
+				for (auto& iterator : clusters[i].adjacentEmptyCells) {
+					distanceToDownOrLeft[iterator.first][iterator.second] = 1;
+					q1.push(iterator);
+				}
+				break;
+			}
+		}
+		lineNum = 1;
+		while (!q1.empty()) {
+			lineNum += 1;
+			while (q1.empty() == false) {
+				int x = q1.front().first;
+				int y = q1.front().second;
+				q1.pop();
+				int dx[6] = { 0, 1, 1, -1, 0, -1 };
+				int dy[6] = { 1, 1, 0, 0, -1, -1 };
+				for (int i = 0; i < 6; i += 1) {
+					int xx = x + dx[i];
+					int yy = y + dy[i];
+					if (isValid(xx, yy) && clonedBoard[xx][yy] == EMPTY) {
+						if (visited[xx][yy] == 0) {
+							visited[xx][yy] = 1;
+							distanceToDownOrLeft[xx][yy] = lineNum;
+						}
+						else if (visited[xx][yy] == 1) {
+							visited[xx][yy] = 2;
+							distanceToDownOrLeft[xx][yy] = lineNum > distanceToDownOrLeft[xx][yy] ? lineNum : distanceToDownOrLeft[xx][yy];
+							q2.push(make_pair(xx, yy));
+						}
+					}
+					else if (isValid(xx, yy) && clonedBoard[xx][yy] == color) {
+						for (auto& iterator : clusters) {
+							if (iterator.colorCells.find({xx,yy}) != iterator.colorCells.end()) {
+								for (auto& iterator2 : iterator.adjacentEmptyCells) {
+									if (clonedBoard[iterator2.first][iterator2.second] == EMPTY) {
+										if (visited[xx][yy] == 0) {
+											visited[xx][yy] = 1;
+											distanceToDownOrLeft[xx][yy] = lineNum;
+										}
+										else if (visited[xx][yy] == 1) {
+											visited[xx][yy] = 2;
+											distanceToDownOrLeft[xx][yy] = lineNum > distanceToDownOrLeft[xx][yy] ? lineNum : distanceToDownOrLeft[xx][yy];
+											q2.push(make_pair(xx, yy));
+										}
+									}
+								}
+								break;
+							}
+						}
+					}
+				}
+			}
+			swap(q1, q2);
+		}
+		int globalMin = 100;
+		int movablity = 0;
+		for (int i = 0; i < SIZE + 2; i += 1) {
+			for (int j = 0; j < SIZE + 2; j += 1) {
+				distance[i][j] = distanceToUpOrRight[i][j] + distanceToDownOrLeft[i][j];
+				if (globalMin == distance[i][j]) {
+					movablity += 1;
+				}
+				else if (globalMin > distance[i][j]) {
+					globalMin = distance[i][j];
+					movablity = 1;
+				}
+			}
+		}
+		if (color == RED) {
+			redDistance = distance;
+			redPotential = globalMin;
+			redMovability = movablity;
+		}
+		else {
+			blueDistance = distance;
+			bluePotential = globalMin;
+			blueMovability = movablity;
 		}
 	}
 
@@ -241,8 +409,8 @@ public:
 		for (int i = 0; i < 121; i += 1) {
 			if (node->next[i] != nullptr) {	//应当必不为空，在进行寻找bestchild时，节点应当121个子
 				double UCB = node->next[i]->win / (node->next[i]->N + epilson) + sqrt(2 * log(root->N + epilson + 1) / (node->next[i]->N + epilson)) + (rand() % 100) / 100.0 * epilson; // Add a random number between 0 and 1
-				if (UCB > max) {
-					max = UCB;
+				if (UCB  + node->next[i]->evalValue > max) {
+					max = UCB + node->next[i]->evalValue;
 					best = node->next[i];
 				}
 			}
@@ -336,6 +504,16 @@ public:
 				}
 			}
 		}
+		node->getClusters(node->clonedBoard, node->player);
+		node->CLA(node->player);
+		node->getClusters(node->clonedBoard, -node->player);
+		node->CLA(-node->player);
+		if (AI == BLUE) {
+			node->evalValue = 100 * (node->redPotential - node->bluePotential) - (node->redMovability - node->blueMovability);
+		}
+		else if (AI == RED) {
+			node->evalValue = 100 * (node->bluePotential - node->redPotential) - (node->blueMovability - node->redMovability);
+		}
 		for (auto& grid : node->emptyGrids) {
 			MCSTNode* child = new MCSTNode();
 			child->parent = node;
@@ -370,8 +548,8 @@ public:
 		for (int i = 0; i < 121; i += 1) {
 			if (root->next[i] != nullptr) {
 				double UCB = root->next[i]->win / (root->next[i]->N + epilson); // Add a random number between 0 and 1
-				if (UCB > max) {
-					max = UCB;
+				if (UCB + root->next[i]->evalValue> max) {
+					max = UCB + root->next[i]->evalValue;
 					best = i;
 				}
 			}
