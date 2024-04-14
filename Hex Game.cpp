@@ -91,15 +91,12 @@ public:
 class Cluster {
 public:
 	int color;
-	unordered_set<pair<int, int>> adjacentEmptyCells;
-	unordered_set<pair<int, int>> colorCells;
+	unordered_set<int>* adjacentEmptyCells;
+	unordered_set<int>* colorCells;
 	Cluster(int color) {
 		this->color = color;
-	}
-	Cluster(const Cluster& cluster) {
-		this->color = cluster.color;
-		this->adjacentEmptyCells = cluster.adjacentEmptyCells;
-		this->colorCells = cluster.colorCells;
+		adjacentEmptyCells = new unordered_set<int>();
+		colorCells = new unordered_set<int>();
 	}
 };
 
@@ -184,7 +181,7 @@ struct MCSTNode {
 						int x = q.front().first;
 						int y = q.front().second;
 						q.pop();
-						cluster.colorCells.emplace(x, y);
+						cluster.colorCells->emplace(toIndex(x, y));
 						int dx[6] = { 0, 1, 1, -1, 0, -1 };
 						int dy[6] = { 1, 1, 0, 0, -1, -1 };
 						for (int k = 0; k < 6; k++) {
@@ -195,11 +192,11 @@ struct MCSTNode {
 								visited[xx][yy] = 1;
 							}
 							else if (isValid(xx, yy) && board[xx][yy] == EMPTY && visited[xx][yy] == 0) {
-								cluster.adjacentEmptyCells.emplace(xx, yy);
+								cluster.adjacentEmptyCells->emplace(toIndex(xx, yy));
 							}
 						}
 					}
-					clusters.push_back(cluster);
+					clusters.emplace_back(cluster);
 				}
 			}
 		}
@@ -216,9 +213,11 @@ struct MCSTNode {
 		for (int i = 0; i < SIZE + 2; i += 1) {
 			distance[i] = new int[SIZE + 2];
 		}
-		for (auto& iterator : clusters[0].adjacentEmptyCells) {
-			distanceToUpOrRight[iterator.first][iterator.second] = 1;
-			q1.push(iterator);
+		for (auto& iterator : *(clusters[0].adjacentEmptyCells)) {
+			int x, y;
+			toPos(iterator, x, y);
+			distanceToUpOrRight[x][y] = 1;
+			q1.push({ x,y });
 		}
 		while (!q1.empty()) {
 			lineNum += 1;
@@ -244,17 +243,19 @@ struct MCSTNode {
 					}
 					else if (isValid(xx, yy) && clonedBoard[xx][yy] == color) {
 						for (auto& iterator : clusters) {
-							if (iterator.colorCells.find({ xx,yy }) != iterator.colorCells.end()) {
-								for (auto& iterator2 : iterator.adjacentEmptyCells) {
-									if (clonedBoard[iterator2.first][iterator2.second] == EMPTY) {
-										if (visited[xx][yy] == 0) {
-											visited[xx][yy] = 1;
-											distanceToUpOrRight[xx][yy] = lineNum;
+							if (iterator.colorCells->find(toIndex(xx, yy)) != iterator.colorCells->end()) {
+								for (auto& iterator2 : *(iterator.adjacentEmptyCells)) {
+									int x, y;
+									toPos(iterator2, x, y);
+									if (clonedBoard[x][y] == EMPTY) {
+										if (visited[x][y] == 0) {
+											visited[x][y] = 1;
+											distanceToUpOrRight[x][y] = lineNum;
 										}
-										else if (visited[xx][yy] == 1) {
-											visited[xx][yy] = 2;
-											distanceToUpOrRight[xx][yy] = lineNum > distanceToUpOrRight[xx][yy] ? lineNum : distanceToUpOrRight[xx][yy];
-											q2.push(make_pair(xx, yy));
+										else if (visited[x][y] == 1) {
+											visited[x][y] = 2;
+											distanceToUpOrRight[x][y] = lineNum > distanceToUpOrRight[x][y] ? lineNum : distanceToUpOrRight[x][y];
+											q2.push(make_pair(x, y));
 										}
 									}
 								}
@@ -266,18 +267,14 @@ struct MCSTNode {
 			}
 			swap(q1, q2);
 		}
-		pair<int, int> grid;
-		if (color == RED) {
-			grid = make_pair(SIZE + 1, 1);
-		}
-		else {
-			grid = make_pair(0, 1);
-		}
+		int grid = color == RED ? 168 : 13;
 		for (int i = 0; i < clusters.size(); i += 1) {
-			if (clusters[i].adjacentEmptyCells.find(grid) != clusters[i].adjacentEmptyCells.end()) {
-				for (auto& iterator : clusters[i].adjacentEmptyCells) {
-					distanceToDownOrLeft[iterator.first][iterator.second] = 1;
-					q1.push(iterator);
+			if (clusters[i].adjacentEmptyCells->find(grid) != clusters[i].adjacentEmptyCells->end()) {
+				for (auto& iterator : *(clusters[i].adjacentEmptyCells)) {
+					int x, y;
+					toPos(iterator, x, y);
+					distanceToDownOrLeft[x][y] = 1;
+					q1.push({ x,y });
 				}
 				break;
 			}
@@ -307,17 +304,19 @@ struct MCSTNode {
 					}
 					else if (isValid(xx, yy) && clonedBoard[xx][yy] == color) {
 						for (auto& iterator : clusters) {
-							if (iterator.colorCells.find({xx,yy}) != iterator.colorCells.end()) {
-								for (auto& iterator2 : iterator.adjacentEmptyCells) {
-									if (clonedBoard[iterator2.first][iterator2.second] == EMPTY) {
-										if (visited[xx][yy] == 0) {
-											visited[xx][yy] = 1;
-											distanceToDownOrLeft[xx][yy] = lineNum;
+							if (iterator.colorCells->find(toIndex(xx, yy)) != iterator.colorCells->end()) {
+								for (auto& iterator2 : *(iterator.adjacentEmptyCells)) {
+									int x, y;
+									toPos(iterator2, x, y);
+									if (clonedBoard[x][y] == EMPTY) {
+										if (visited[x][y] == 0) {
+											visited[x][y] = 1;
+											distanceToDownOrLeft[x][y] = lineNum;
 										}
-										else if (visited[xx][yy] == 1) {
-											visited[xx][yy] = 2;
-											distanceToDownOrLeft[xx][yy] = lineNum > distanceToDownOrLeft[xx][yy] ? lineNum : distanceToDownOrLeft[xx][yy];
-											q2.push(make_pair(xx, yy));
+										else if (visited[x][y] == 1) {
+											visited[x][y] = 2;
+											distanceToDownOrLeft[x][y] = lineNum > distanceToDownOrLeft[x][y] ? lineNum : distanceToDownOrLeft[x][y];
+											q2.push(make_pair(x, y));
 										}
 									}
 								}
