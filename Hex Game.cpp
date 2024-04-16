@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <ctime>
 #include <queue>
+#include <cstring>
 #include <unordered_set>
 
 using namespace std;
@@ -155,6 +156,7 @@ struct MCSTNode {
 	int player = RED;	//当前节点是哪个玩家下的，初始化为RIVAL（根节点是对手下的最后一颗棋）
 	int** clonedBoard;	//克隆的棋盘
 	bool isLeaf = true;		//是否是叶节点
+	bool isFull = false;
 	int evalValue = 0;
 	vector<pair<int, int>> emptyGrids;
 	vector<Cluster> clusters;
@@ -218,6 +220,7 @@ struct MCSTNode {
 		for (int i = 0; i < SIZE + 2; i += 1) {
 			distance[i] = new int[SIZE + 2];
 		}
+
 		for (auto& iterator : *(clusters[0].adjacentEmptyCells)) {
 			int x, y;
 			toPos(iterator, x, y);
@@ -273,13 +276,15 @@ struct MCSTNode {
 			}
 			swap(q1, q2);
 		}
+		memset(visited, 0, sizeof(visited));
 		int grid = color == RED ? toIndex(SIZE + 1,1) : toIndex(1, 0);
 		for (int i = 0; i < clusters.size(); i += 1) {
-			if (clusters[i].adjacentEmptyCells->find(grid) != clusters[i].adjacentEmptyCells->end()) {
+			if (clusters[i].colorCells->find(grid) != clusters[i].colorCells->end()) {
 				for (auto& iterator : *(clusters[i].adjacentEmptyCells)) {
 					int x, y;
 					toPos(iterator, x, y);
 					distanceToDownOrLeft[x][y] = 1;
+					visited[x][y] = 2;
 					q1.push({ x,y });
 				}
 				break;
@@ -339,6 +344,8 @@ struct MCSTNode {
 		for (int i = 1; i <= SIZE; i += 1) {
 			for (int j = 1; j <= SIZE; j += 1) {
 				distance[i][j] = distanceToUpOrRight[i][j] + distanceToDownOrLeft[i][j];
+				if (distance[i][j] == 0)
+					continue;
 				if (globalMin == distance[i][j]) {
 					movablity += 1;
 				}
@@ -377,15 +384,15 @@ public:
 		for (int i = 0; i < SIZE + 2; i += 1) {
 			root->clonedBoard[i] = new int[SIZE + 2];
 		}
-		for (int i = 0; i < SIZE + 2; i += 1) {
-			for (int j = 0; j < SIZE + 2; j += 1) {
+		for(int i = 0; i < SIZE + 2; i += 1){
+			for(int j = 0; j < SIZE + 2; j += 1){
 				root->clonedBoard[i][j] = board[i][j];
 			}
 		}
 		for (int i = 1; i <= SIZE; i += 1) {
 			for (int j = 1; j <= SIZE; j += 1) {
 				if (root->clonedBoard[i][j] == EMPTY) {
-					root->emptyGrids.push_back(make_pair(i, j));
+					root->emptyGrids.emplace_back(make_pair(i, j));
 				}
 			}
 		}
@@ -409,7 +416,7 @@ public:
 	}
 
 	MCSTNode* bestChild(MCSTNode* node) {
-		double max = -1;
+		double max = -100000;
 		MCSTNode* best = nullptr;
 		for (int i = 0; i < 121; i += 1) {
 			if (node->next[i] != nullptr) {	//应当必不为空，在进行寻找bestchild时，节点应当121个子
@@ -438,16 +445,15 @@ public:
 		}
 		int x, y;
 		toPos(node->move, x, y);
-		simulation_board[x][y] = node->parent->clonedBoard[x][y];
 		simulation_board[x][y] = -node->parent->player;
 		node->getClusters(simulation_board, node->player);
 		node->CLA(simulation_board,node->player);
 		node->getClusters(simulation_board, -node->player);
 		node->CLA(simulation_board,-node->player);
-		if (AI == BLUE) {
+		if (AI == RED) {
 			node->evalValue = 100 * (node->redPotential - node->bluePotential) - (node->redMovability - node->blueMovability);
 		}
-		else if (AI == RED) {
+		else if (AI == BLUE) {
 			node->evalValue = 100 * (node->bluePotential - node->redPotential) - (node->blueMovability - node->redMovability);
 		}
 		//暂时取消随机模拟
@@ -493,6 +499,7 @@ public:
 	/*反向传播*/
 	void backpropagation(MCSTNode* node, int evalValue) {
 		while (node != nullptr) {
+			node->N += 1;
 			if (node->parent != nullptr) {
 				node->parent->evalValue += 0.1 * node->evalValue;
 			}
@@ -526,24 +533,26 @@ public:
 				}
 			}
 		}
-		node->getClusters(node->clonedBoard, node->player);
-		node->CLA(node->clonedBoard,node->player);
-		node->getClusters(node->clonedBoard, -node->player);
-		node->CLA(node->clonedBoard,-node->player);
-		if (AI == BLUE) {
-			node->evalValue = 100 * (node->redPotential - node->bluePotential) - (node->redMovability - node->blueMovability);
-		}
-		else if (AI == RED) {
-			node->evalValue = 100 * (node->bluePotential - node->redPotential) - (node->blueMovability - node->redMovability);
-		}
-		for (auto& grid : node->emptyGrids) {
-			MCSTNode* child = new MCSTNode();
-			child->parent = node;
-			child->move = toIndex(grid.first, grid.second);
-			child->player = -node->player;
-			//child->set = new DisjointSet(*node->set);
-			//child->set->UnionStones(grid.first, grid.second, node->clonedBoard);
-			node->next[toIndex(grid.first, grid.second)] = child;
+		//node->getClusters(node->clonedBoard, node->player);
+		//node->CLA(node->clonedBoard,node->player);
+		//node->getClusters(node->clonedBoard, -node->player);
+		//node->CLA(node->clonedBoard,-node->player);
+		//if (AI == BLUE) {
+		//	node->evalValue = 100 * (node->redPotential - node->bluePotential) - (node->redMovability - node->blueMovability);
+		//}
+		//else if (AI == RED) {
+		//	node->evalValue = 100 * (node->bluePotential - node->redPotential) - (node->blueMovability - node->redMovability);
+		//}
+		if (node->emptyGrids.size() != 0) {
+			for (auto& grid : node->emptyGrids) {
+				MCSTNode* child = new MCSTNode();
+				child->parent = node;
+				child->move = toIndex(grid.first, grid.second);
+				child->player = -node->player;
+				//child->set = new DisjointSet(*node->set);
+				//child->set->UnionStones(grid.first, grid.second, node->clonedBoard);
+				node->next[toIndex(grid.first, grid.second)] = child;
+			}
 		}
 		return node->next[(node->emptyGrids[0].first - 1) * 11 + node->emptyGrids[0].second - 1];
 	}
@@ -563,6 +572,14 @@ public:
 		}
 	}
 
+	void run(int iterations) {
+		for (int i = 0; i < iterations; i += 1) {
+			MCSTNode* node = select(root);
+			node = expand(node);
+			simulation(node);
+			backpropagation(node, node->evalValue);
+		}
+	}
 	/*决策*/
 	int getBestMove() {
 		double max = -1000000;
