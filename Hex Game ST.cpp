@@ -3,6 +3,7 @@
 #define RED 1
 #define EMPTY 0
 #define BLUE -1
+#define M 100
 #include <iostream>
 #include <random>
 #include <vector>
@@ -13,7 +14,7 @@
 #include <unordered_set>
 
 
-using namespace std;
+	using namespace std;
 
 double epilson = 1e-2;
 bool isFirst = false;	//AI是先手还是后手
@@ -56,32 +57,34 @@ public:
 
 class SearchTreeNode {
 public:
-    int x, y;
-    int depth;
-    int player = RIVAL;
-    int value;
-    int bluePotential;
-    int redPotential;
-    int blueMovability;
-    int redMovability;
-    int** clonedBoard;
-    int** blueDistance;
-    int** redDistance;
-    SearchTreeNode* parent;
-    vector<SearchTreeNode*> children;
-    vector<Cluster> clusters;
-    vector<pair<int,int>> emptyGrids;
-    SearchTreeNode(int** board,int depth) {
-        clonedBoard = board;
-        this->depth = depth;
-    }
-    void getClusters(int** board, int color) {
-		clusters.clear();
+	int x, y;
+	int depth;
+	int player = RIVAL;
+	int value;
+	int bluePotential = 1000;
+	int redPotential = 1000;
+	int blueMovability = 0;
+	int redMovability = 0;
+	int** clonedBoard;
+	int** blueDistance;
+	int** redDistance;
+	int evalValue = -100000;
+	bool isLeaf = true;
+	SearchTreeNode* parent = nullptr;
+	vector<SearchTreeNode*> children;
+	vector<int> bestChildren;
+	vector<Cluster> redClusters;
+	vector<Cluster> blueClusters;
+	SearchTreeNode(int** board, int depth) {
+		clonedBoard = board;
+		this->depth = depth;
+	}
+	void getClusters(int** board) {
 		int visited[SIZE + 2][SIZE + 2] = { 0 };
 		for (int i = 0; i < SIZE + 2; i++) {
 			for (int j = 0; j < SIZE + 2; j++) {
-				if (board[i][j] == color && visited[i][j] == 0) {
-					Cluster cluster = Cluster(color);
+				if (board[i][j] == RED && visited[i][j] == 0) {
+					Cluster cluster = Cluster(RED);
 					//bfs
 					queue<pair<int, int>> q;
 					q.push(make_pair(i, j));
@@ -91,12 +94,12 @@ public:
 						int y = q.front().second;
 						q.pop();
 						cluster.colorCells->emplace(toIndex(x, y));
-						int dx[6] = { 0, 1, 1, -1, 0, -1 };
-						int dy[6] = { 1, 1, 0, 0, -1, -1 };
+						int dx[6] = { -1,-1, 0, 1, 1, 0 };
+						int dy[6] = { 0, 1, 1, 0,-1,-1 };
 						for (int k = 0; k < 6; k++) {
 							int xx = x + dx[k];
 							int yy = y + dy[k];
-							if (isValidInWholeBoard(xx, yy) && board[xx][yy] == color && visited[xx][yy] == 0) {
+							if (isValidInWholeBoard(xx, yy) && board[xx][yy] == RED && visited[xx][yy] == 0) {
 								q.push(make_pair(xx, yy));
 								visited[xx][yy] = 1;
 							}
@@ -105,29 +108,71 @@ public:
 							}
 						}
 					}
-					clusters.emplace_back(cluster);
+					redClusters.emplace_back(cluster);
 				}
 			}
 		}
+		memset(visited, 0, sizeof(visited));
+		for (int i = 0; i < SIZE + 2; i++) {
+			for (int j = 0; j < SIZE + 2; j++) {
+				if (board[i][j] == BLUE && visited[i][j] == 0) {
+					Cluster cluster = Cluster(BLUE);
+					//bfs
+					queue<pair<int, int>> q;
+					q.push(make_pair(i, j));
+					visited[i][j] = 1;
+					while (!q.empty()) {
+						int x = q.front().first;
+						int y = q.front().second;
+						q.pop();
+						cluster.colorCells->emplace(toIndex(x, y));
+						int dx[6] = { -1,-1, 0, 1, 1, 0 };
+						int dy[6] = { 0, 1, 1, 0,-1,-1 };
+						for (int k = 0; k < 6; k++) {
+							int xx = x + dx[k];
+							int yy = y + dy[k];
+							if (isValidInWholeBoard(xx, yy) && board[xx][yy] == BLUE && visited[xx][yy] == 0) {
+								q.push(make_pair(xx, yy));
+								visited[xx][yy] = 1;
+							}
+							else if (isValid(xx, yy) && board[xx][yy] == EMPTY && visited[xx][yy] == 0) {
+								cluster.adjacentEmptyCells->emplace(toIndex(xx, yy));
+							}
+						}
+					}
+					blueClusters.emplace_back(cluster);
+				}
+			}
+		}
+
 	}
 	struct my_compare {
-  		bool operator()(const pair<int, int>& p1, const pair<int, int>& p2) {
-    	return p1.first < p2.first; // 这里使用 > 来实现降序排序，< 表示升序
- 		}
+		bool operator()(const pair<int, int>& p1, const pair<int, int>& p2) {
+			return p1.first < p2.first; // 这里使用 > 来实现降序排序，< 表示升序
+		}
 	};
-	vector<int> CLA(int** board,int color) {
+	void CLA(int** board) {
 		queue<pair<int, int>> q1;
 		queue<pair<int, int>> q2;
 		int lineNum = 1;
 		int distanceToUpOrRight[SIZE + 2][SIZE + 2] = { 0 };
 		int distanceToDownOrLeft[SIZE + 2][SIZE + 2] = { 0 };
-		int** distance = new int* [SIZE + 2];
+		std::fill(&distanceToUpOrRight[0][0], &distanceToUpOrRight[0][0] + (SIZE * 2) * (SIZE + 2), 100000);
+		std::fill(&distanceToDownOrLeft[0][0], &distanceToDownOrLeft[0][0] + (SIZE * 2) * (SIZE + 2), 100000);
+		int color = RED;
+		redDistance = new int* [SIZE + 2];
 		int visited[SIZE + 2][SIZE + 2] = { 0 };
 		for (int i = 0; i < SIZE + 2; i += 1) {
-			distance[i] = new int[SIZE + 2];
+			redDistance[i] = new int[SIZE + 2];
 		}
-
-		for (auto& iterator : *(clusters[0].adjacentEmptyCells)) {
+		//std::fill(&redDistance[0][0], &redDistance[0][0] + (SIZE * 2) * (SIZE + 2), 0);
+		blueDistance = new int* [SIZE + 2];
+		for (int i = 0; i < SIZE + 2; i += 1) {
+			blueDistance[i] = new int[SIZE + 2];
+		}
+		//std::fill(&blueDistance[0][0], &blueDistance[0][0] + (SIZE * 2) * (SIZE + 2), 0);
+		//RED
+		for (auto& iterator : *(redClusters[0].adjacentEmptyCells)) {
 			int x, y;
 			toPos(iterator, x, y);
 			distanceToUpOrRight[x][y] = 1;
@@ -140,24 +185,23 @@ public:
 				int x = q1.front().first;
 				int y = q1.front().second;
 				q1.pop();
-				int dx[6] = { 0, 1, 1, -1, 0, -1 };
-				int dy[6] = { 1, 1, 0, 0, -1, -1 };
+				int dx[6] = { -1,-1, 0, 1, 1, 0 };
+				int dy[6] = { 0, 1, 1, 0,-1,-1 };
 				for (int i = 0; i < 6; i += 1) {
 					int xx = x + dx[i];
 					int yy = y + dy[i];
 					if (isValid(xx, yy) && board[xx][yy] == EMPTY) {
 						if (visited[xx][yy] == 0) {
 							visited[xx][yy] = 1;
-							distanceToUpOrRight[xx][yy] = lineNum;
 						}
 						else if (visited[xx][yy] == 1) {
 							visited[xx][yy] = 2;
-							distanceToUpOrRight[xx][yy] = lineNum > distanceToUpOrRight[xx][yy] ? lineNum : distanceToUpOrRight[xx][yy];
+							distanceToUpOrRight[xx][yy] = lineNum;
 							q2.push(make_pair(xx, yy));
 						}
 					}
-					else if (isValid(xx, yy) && board[xx][yy] == color) {
-						for (auto& iterator : clusters) {
+					else if (visited[xx][yy] == 0 && isValid(xx, yy) && board[xx][yy] == color) {
+						for (auto& iterator : redClusters) {
 							if (iterator.colorCells->find(toIndex(xx, yy)) != iterator.colorCells->end()) {
 								for (auto& iterator2 : *(iterator.adjacentEmptyCells)) {
 									int x, y;
@@ -165,11 +209,10 @@ public:
 									if (board[x][y] == EMPTY) {
 										if (visited[x][y] == 0) {
 											visited[x][y] = 1;
-											distanceToUpOrRight[x][y] = lineNum;
 										}
 										else if (visited[x][y] == 1) {
 											visited[x][y] = 2;
-											distanceToUpOrRight[x][y] = lineNum > distanceToUpOrRight[x][y] ? lineNum : distanceToUpOrRight[x][y];
+											distanceToUpOrRight[x][y] = lineNum;
 											q2.push(make_pair(x, y));
 										}
 									}
@@ -183,10 +226,10 @@ public:
 			swap(q1, q2);
 		}
 		memset(visited, 0, sizeof(visited));
-		int grid = color == RED ? toIndex(SIZE + 1,1) : toIndex(1, 0);
-		for (int i = 0; i < clusters.size(); i += 1) {
-			if (clusters[i].colorCells->find(grid) != clusters[i].colorCells->end()) {
-				for (auto& iterator : *(clusters[i].adjacentEmptyCells)) {
+		int grid = toIndex(SIZE + 1, 1);
+		for (int i = 0; i < redClusters.size(); i += 1) {
+			if (redClusters[i].colorCells->find(grid) != redClusters[i].colorCells->end()) {
+				for (auto& iterator : *(redClusters[i].adjacentEmptyCells)) {
 					int x, y;
 					toPos(iterator, x, y);
 					distanceToDownOrLeft[x][y] = 1;
@@ -203,24 +246,23 @@ public:
 				int x = q1.front().first;
 				int y = q1.front().second;
 				q1.pop();
-				int dx[6] = { 0, 1, 1, -1, 0, -1 };
-				int dy[6] = { 1, 1, 0, 0, -1, -1 };
+				int dx[6] = { -1,-1, 0, 1, 1, 0 };
+				int dy[6] = { 0, 1, 1, 0,-1,-1 };
 				for (int i = 0; i < 6; i += 1) {
 					int xx = x + dx[i];
 					int yy = y + dy[i];
 					if (isValid(xx, yy) && board[xx][yy] == EMPTY) {
 						if (visited[xx][yy] == 0) {
 							visited[xx][yy] = 1;
-							distanceToDownOrLeft[xx][yy] = lineNum;
 						}
 						else if (visited[xx][yy] == 1) {
 							visited[xx][yy] = 2;
-							distanceToDownOrLeft[xx][yy] = lineNum > distanceToDownOrLeft[xx][yy] ? lineNum : distanceToDownOrLeft[xx][yy];
+							distanceToDownOrLeft[xx][yy] = lineNum;
 							q2.push(make_pair(xx, yy));
 						}
 					}
-					else if (isValid(xx, yy) && board[xx][yy] == color) {
-						for (auto& iterator : clusters) {
+					else if (visited[xx][yy] == 0 && isValid(xx, yy) && board[xx][yy] == color) {
+						for (auto& iterator : redClusters) {
 							if (iterator.colorCells->find(toIndex(xx, yy)) != iterator.colorCells->end()) {
 								for (auto& iterator2 : *(iterator.adjacentEmptyCells)) {
 									int x, y;
@@ -228,11 +270,10 @@ public:
 									if (board[x][y] == EMPTY) {
 										if (visited[x][y] == 0) {
 											visited[x][y] = 1;
-											distanceToDownOrLeft[x][y] = lineNum;
 										}
 										else if (visited[x][y] == 1) {
 											visited[x][y] = 2;
-											distanceToDownOrLeft[x][y] = lineNum > distanceToDownOrLeft[x][y] ? lineNum : distanceToDownOrLeft[x][y];
+											distanceToDownOrLeft[x][y] = lineNum;
 											q2.push(make_pair(x, y));
 										}
 									}
@@ -245,73 +286,388 @@ public:
 			}
 			swap(q1, q2);
 		}
-		int globalMin = 100;
-		int movablity = 0;
-		priority_queue<pair<int,int>,vector<pair<int,int>>,my_compare> q;
-		
 		for (int i = 1; i <= SIZE; i += 1) {
 			for (int j = 1; j <= SIZE; j += 1) {
-				distance[i][j] = distanceToUpOrRight[i][j] + distanceToDownOrLeft[i][j];
-				q.push(make_pair(distance[i][j],toIndex(i,j)));
-				if(q.size() > 5)
-					q.pop();
-				if (distance[i][j] == 0)
+				redDistance[i][j] = distanceToUpOrRight[i][j] + distanceToDownOrLeft[i][j];
+			}
+		}
+		for (int i = 1; i <= SIZE; i += 1) {
+			for (int j = 1; j <= SIZE; j += 1) {
+				if (redDistance[i][j] == 0)
 					continue;
-				if (globalMin == distance[i][j]) {
-					movablity += 1;
+				if (redDistance[i][j] < redPotential) {
+					redPotential = redDistance[i][j];
+					redMovability = 1;
 				}
-				else if (globalMin > distance[i][j]) {
-					globalMin = distance[i][j];
-					movablity = 1;
+				else if (redDistance[i][j] == redPotential) {
+					redMovability += 1;
 				}
 			}
 		}
-		if (color == RED) {
-			redDistance = distance;
-			redPotential = globalMin;
-			redMovability = movablity;
+		//BLUE
+		lineNum = 1;
+		std::fill(&distanceToDownOrLeft[0][0], &distanceToDownOrLeft[0][0] + (SIZE + 2) * (SIZE + 2), 100000);
+		std::fill(&distanceToUpOrRight[0][0], &distanceToUpOrRight[0][0] + (SIZE + 2) * (SIZE + 2), 100000);
+		memset(visited, 0, sizeof(visited));
+		color = BLUE;
+		for (auto& iterator : *(blueClusters[0].adjacentEmptyCells)) {
+			int x, y;
+			toPos(iterator, x, y);
+			distanceToUpOrRight[x][y] = 1;
+			visited[x][y] = 2;
+			q1.push({ x,y });
 		}
-		else {
-			blueDistance = distance;
-			bluePotential = globalMin;
-			blueMovability = movablity;
+		while (!q1.empty()) {
+			lineNum += 1;
+			while (q1.empty() == false) {
+				int x = q1.front().first;
+				int y = q1.front().second;
+				q1.pop();
+				int dx[6] = { -1,-1, 0, 1, 1, 0 };
+				int dy[6] = { 0, 1, 1, 0,-1,-1 };
+				for (int i = 0; i < 6; i += 1) {
+					int xx = x + dx[i];
+					int yy = y + dy[i];
+					if (isValid(xx, yy) && board[xx][yy] == EMPTY) {
+						if (visited[xx][yy] == 0) {
+							visited[xx][yy] = 1;
+						}
+						else if (visited[xx][yy] == 1) {
+							visited[xx][yy] = 2;
+							distanceToUpOrRight[xx][yy] = lineNum;
+							q2.push(make_pair(xx, yy));
+						}
+					}
+					else if (visited[xx][yy] == 0 && isValid(xx, yy) && board[xx][yy] == color) {
+						for (auto& iterator : blueClusters) {
+							if (iterator.colorCells->find(toIndex(xx, yy)) != iterator.colorCells->end()) {
+								for (auto& iterator2 : *(iterator.adjacentEmptyCells)) {
+									int x, y;
+									toPos(iterator2, x, y);
+									if (board[x][y] == EMPTY) {
+										if (visited[x][y] == 0) {
+											visited[x][y] = 1;
+										}
+										else if (visited[x][y] == 1) {
+											visited[x][y] = 2;
+											distanceToUpOrRight[x][y] = lineNum;
+											q2.push(make_pair(x, y));
+										}
+									}
+								}
+								break;
+							}
+						}
+					}
+				}
+			}
+			swap(q1, q2);
 		}
+		memset(visited, 0, sizeof(visited));
+		grid = toIndex(1, 0);
+		for (int i = 0; i < blueClusters.size(); i += 1) {
+			if (blueClusters[i].colorCells->find(grid) != blueClusters[i].colorCells->end()) {
+				for (auto& iterator : *(blueClusters[i].adjacentEmptyCells)) {
+					int x, y;
+					toPos(iterator, x, y);
+					distanceToDownOrLeft[x][y] = 1;
+					visited[x][y] = 2;
+					q1.push({ x,y });
+				}
+				break;
+			}
+		}
+		lineNum = 1;
+		while (!q1.empty()) {
+			lineNum += 1;
+			while (q1.empty() == false) {
+				int x = q1.front().first;
+				int y = q1.front().second;
+				q1.pop();
+				int dx[6] = { -1,-1, 0, 1, 1, 0 };
+				int dy[6] = { 0, 1, 1, 0,-1,-1 };
+				for (int i = 0; i < 6; i += 1) {
+					int xx = x + dx[i];
+					int yy = y + dy[i];
+					if (isValid(xx, yy) && board[xx][yy] == EMPTY) {
+						if (visited[xx][yy] == 0) {
+							visited[xx][yy] = 1;
+						}
+						else if (visited[xx][yy] == 1) {
+							visited[xx][yy] = 2;
+							distanceToDownOrLeft[xx][yy] = lineNum;
+							q2.push(make_pair(xx, yy));
+						}
+					}
+					else if (visited[xx][yy] == 0 && isValid(xx, yy) && board[xx][yy] == color) {
+						for (auto& iterator : blueClusters) {
+							if (iterator.colorCells->find(toIndex(xx, yy)) != iterator.colorCells->end()) {
+								for (auto& iterator2 : *(iterator.adjacentEmptyCells)) {
+									int x, y;
+									toPos(iterator2, x, y);
+									if (board[x][y] == EMPTY) {
+										if (visited[x][y] == 0) {
+											visited[x][y] = 1;
+										}
+										else if (visited[x][y] == 1) {
+											visited[x][y] = 2;
+											distanceToDownOrLeft[x][y] = lineNum;
+											q2.push(make_pair(x, y));
+										}
+									}
+								}
+								break;
+							}
+						}
+					}
+				}
+			}
+			swap(q1, q2);
+		}
+		for (int i = 1; i <= SIZE; i += 1) {
+			for (int j = 1; j <= SIZE; j += 1) {
+				blueDistance[i][j] = distanceToUpOrRight[i][j] + distanceToDownOrLeft[i][j];
+			}
+		}
+		for (int i = 1; i <= SIZE; i += 1) {
+			for (int j = 1; j <= SIZE; j += 1) {
+				if (blueDistance[i][j] == 0)
+					continue;
+				if (blueDistance[i][j] < bluePotential) {
+					bluePotential = blueDistance[i][j];
+					blueMovability = 1;
+				}
+				else if (blueDistance[i][j] == bluePotential) {
+					blueMovability += 1;
+				}
+			}
+		}
+		//merge
+		int globalMin = 100;
+		int movablity = 0;
+		int distance[SIZE + 2][SIZE + 2] = { 0 };
+		priority_queue<pair<int, int>, vector<pair<int, int>>, my_compare> q;
+		for (int i = 1; i <= SIZE; i += 1) {
+			for (int j = 1; j <= SIZE; j += 1) {
+				distance[i][j] = redDistance[i][j] + blueDistance[i][j];
+				if (distance[i][j] != 0)
+					q.push(make_pair(distance[i][j], toIndex(i, j)));
+				if (q.size() > 10)
+					q.pop();
+			}
+		}
+		if (AI == RED)
+			evalValue = M * (bluePotential - redPotential) - (blueMovability - redMovability);
+		else
+			evalValue = M * (redPotential - bluePotential) - (redMovability - blueMovability);
 		vector<int> res;
-		while(q.empty() == false){
+		while (q.empty() == false) {
 			res.emplace_back(q.top().second);
 			q.pop();
 		}
-		return res;
+		bestChildren = res;
 	}
 
-    void getEmptyGrids() {
-        emptyGrids.clear();
-        for (int i = 1; i <= SIZE; i++) {
-            for (int j = 1; j <= SIZE; j++) {
-                if (clonedBoard[i][j] == EMPTY) {
-                    emptyGrids.emplace_back(make_pair(i, j));
-                }
-            }
-        }
-    }
 
 };
 
 class SearchTree {
 public:
-    SearchTreeNode* root;
-    SearchTree(int** board) {
-        root = new SearchTreeNode(board,0);
-        root->getClusters(board,AI);
-		vector<int> result = root->CLA(board,AI);
-        for(auto& iterator : result){
-			int x,y;
-			toPos(iterator,x,y);
-			
+	SearchTreeNode* root;
+	SearchTree(int** board, vector<pair<int, int>> twoLastMoves) {
+		root = new SearchTreeNode(board, 0);
+		root->getClusters(board);
+		root->CLA(board);
+		root->isLeaf = false;
+
+		for (auto& iterator : twoLastMoves) {
+			int x = iterator.first;
+			int y = iterator.second;
+			int dx[6] = { -1,-1, 0, 1, 1, 0 };
+			int dy[6] = { 0, 1, 1, 0,-1,-1 };
+			int minDistance = 1000;
+			int minIndex = -1;
+			for (int i = 0; i < 6; i += 1) {
+				int xx = x + dx[i];
+				int yy = y + dy[i];
+				if (isValid(xx, yy) && root->clonedBoard[xx][yy] == EMPTY) {
+					if (minDistance > root->redDistance[xx][yy] + root->blueDistance[xx][yy]) {
+						minDistance = root->redDistance[xx][yy] + root->blueDistance[xx][yy];
+						minIndex = i;
+					}
+				}
+			}
+			if (minIndex != -1) {
+				int xx = x + dx[minIndex];
+				int yy = y + dy[minIndex];
+				root->bestChildren.emplace_back(toIndex(xx, yy));
+			}
 		}
-    }
-    
-};
-class HexGame { 
+
+		for (auto& iterator : root->bestChildren) {
+			int x, y;
+			toPos(iterator, x, y);
+			int** clonedBoard = new int* [SIZE + 2];
+			for (int i = 0; i < SIZE + 2; i += 1) {
+				clonedBoard[i] = new int[SIZE + 2];
+				memcpy(clonedBoard[i], board[i], sizeof(int) * (SIZE + 2));
+			}
+			clonedBoard[x][y] = AI;
+			SearchTreeNode* child = new SearchTreeNode(clonedBoard, 1);
+			child->parent = root;
+			child->player = RIVAL;
+			child->x = x;
+			child->y = y;
+			child->depth = 1;
+			root->children.emplace_back(child);
+			child->getClusters(clonedBoard);
+			child->CLA(clonedBoard);
+		}
+
+	}
+	void expandNodes(SearchTreeNode* node) {
+		if (node->depth == 4) {
+			return;
+		}
+		for (auto& iterator : node->bestChildren) {
+			int x, y;
+			toPos(iterator, x, y);
+			int** clonedBoard = new int* [SIZE + 2];
+			for (int i = 0; i < SIZE + 2; i += 1) {
+				clonedBoard[i] = new int[SIZE + 2];
+				memcpy(clonedBoard[i], node->clonedBoard[i], sizeof(int) * (SIZE + 2));
+			}
+			clonedBoard[x][y] = -node->player;
+			SearchTreeNode* child = new SearchTreeNode(clonedBoard, node->depth + 1);
+			child->x = x;
+			child->y = y;
+			child->parent = node;
+			child->player = -node->player;
+			node->children.emplace_back(child);
+			child->depth = node->depth + 1;
+			child->getClusters(clonedBoard);
+			child->CLA(clonedBoard);
+		}
+		node->isLeaf = false;
+	}
+	void backpropagation(SearchTreeNode* node) {
+		while (node->parent != nullptr) {
+			node->parent->evalValue = max(node->parent->evalValue, node->evalValue);
+			node = node->parent;
+		}
+	}
+	void search() {
+		for (auto& iterator : root->children) {
+			expandNodes(iterator);
+		}
+		for (auto& iterator : root->children) {
+			for (auto& iterator2 : iterator->children) {
+				expandNodes(iterator2);
+			}
+		}
+		for (auto& iterator : root->children)
+			for (auto& iterator2 : iterator->children) {
+				for (auto& iterator3 : iterator2->children) {
+					backpropagation(iterator3);
+				}
+			}
+		/*
+		for (auto& iterator : root->children) {
+			for (auto& iterator2 : iterator->children) {
+				for (auto& iterator3 : iterator2->children) {
+					for (auto& iterator4 : iterator3->children)
+						backpropagation(iterator4);
+				}
+			}
+		}
+		*/
+	}
 
 };
+class HexGame {
+public:
+	HexGame() {}
+	int** board;
+	int** blueDistance;
+	int** redDistance;
+	SearchTree* searchTree;
+	vector<pair<int, int>> twoLastMoves;
+	bool BuildBoard() {
+		/*初始化*/
+		board = new int* [SIZE + 2];
+		for (int i = 0; i < SIZE + 2; i++) {
+			board[i] = new int[SIZE + 2];
+		}
+		for (int i = 0; i <= SIZE + 1; i++)
+			for (int j = 0; j <= SIZE + 1; j++)
+				board[i][j] = EMPTY;
+		for (int i = 0; i <= SIZE; i += 1) {
+			board[0][i] = RED;
+			board[SIZE + 1][i + 1] = RED;
+			board[i + 1][0] = BLUE;
+			board[i][SIZE + 1] = BLUE;
+		}
+		/*读入数据*/
+		int steps;
+		scanf("%d", &steps);
+		int x, y;
+		for (int i = 0; i < steps - 1; i++) {
+			scanf("%d%d", &x, &y);   //对方落子
+			if (i == 0 && x == -1) {
+				//输入的第一棋是（-1，-1），说明AI己方是先手，不用管
+				isFirst = true;
+				AI = RED;
+				RIVAL = BLUE;
+			}
+			else if (i == 0 && x != -1) {
+				isFirst = false;
+				RIVAL = RED;
+				AI = BLUE;
+				board[x + 1][y + 1] = RIVAL;
+			}
+			else if (x != -1) {
+				board[x + 1][y + 1] = RIVAL;
+			}
+			scanf("%d%d", &x, &y);  //这里输入的绝对不可能是（-1，-1）  //己方落子
+			board[x + 1][y + 1] = AI;
+			if (i == steps - 2)
+				twoLastMoves.emplace_back(make_pair(x + 1, y + 1));
+		}
+		scanf("%d%d", &x, &y);		//对方落子
+		twoLastMoves.emplace_back(make_pair(x + 1, y + 1));
+		if (x == -1) {
+			printf("1 2");
+			return false;
+		}
+		else {
+			board[x + 1][y + 1] = RIVAL;
+			searchTree = new SearchTree(board, twoLastMoves);
+			return true;
+		}
+	}
+
+	void play() {
+		bool flag = BuildBoard();
+		if (flag == false)
+			return;
+		searchTree->search();
+		int max = -100000;
+		int x, y;
+		searchTree->root->children[searchTree->root->children.size() - 1]->evalValue += 50;
+		searchTree->root->children[searchTree->root->children.size() - 2]->evalValue += 50;
+		for (auto& iterator : searchTree->root->children) {
+			if (iterator->evalValue > max) {
+				max = iterator->evalValue;
+				x = iterator->x;
+				y = iterator->y;
+			}
+		}
+		printf("%d %d", x - 1, y - 1);
+	}
+};
+
+int main() {
+	HexGame hexGame;
+	hexGame.play();
+	return 0;
+}
